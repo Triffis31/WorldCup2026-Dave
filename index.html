@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WC26 Pool</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.png">
+  
+  <script>
+    window.addEventListener('error', function(e) {
+      document.body.innerHTML = '<div style="padding: 20px; text-align: center; color: #991b1b; background: #fee2e2; font-family: sans-serif; margin-top: 50px; border-radius: 8px;"><b>App Error:</b> ' + e.message + '<br><br>Line: ' + e.lineno + '</div>';
+    });
+  </script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #f8fafc; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: contain;}
+    .hidden { display: none !important; }
+    .fade-in { animation: fadeIn 0.3s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .app-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: background-color 0.3s, border-color 0.3s; }
+    .tier-green { background-color: #f0fdf4 !important; border-color: #86efac !important; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+  </style>
+  
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycby_hps22I_J1m-hvMFmf6jlW785V6-K69j6WDVTFObaRxFsB8RTbGy6Bnc-pr9mnggCVQ/exec"; 
+    
+    let state = { email: '', data: null, role: 'Member' };
+    let userPicks = {};
+    let isLoggingIn = false;
+    let statsSortMode = 'Tier';
+    let statsBracketRound = 'R32';
+
+    // --- Browser Navigation & Pull-to-Refresh ---
+    window.onpopstate = function(event) {
+      if (event.state && event.state.view) {
+        navigate(event.state.view, false);
+      } else {
+        navigate('home-view', false);
+      }
+    };
+
+    let touchstartY = 0;
+    document.addEventListener('touchstart', e => {
+      touchstartY = e.touches[0].clientY;
+    }, {passive: false});
+
+    document.addEventListener('touchmove', e => {
+      const touchY = e.touches[0].clientY;
+      if (window.scrollY === 0 && touchY > touchstartY + 100) {
+        if(state.email) fetchAppData();
+        touchstartY = touchY;
+      }
+    }, {passive: false});
+
+    // --- Core API & State Logic ---
+    async function initApp() {
+      const savedEmail = localStorage.getItem('wc26_email');
+      const savedCode = localStorage.getItem('wc26_code');
+
+      if (savedEmail && savedCode) {
+        const res = await apiCall({ action: 'login', email: savedEmail, code: savedCode });
+        
+        if (res && res.success) {
+          state.email = savedEmail;
+          state.role = res.role;
+          
+          if (!res.name) {
+            const newName = prompt("Welcome to the WC26 Pool! Please enter your Name:");
+            if (newName) await apiCall({ action: 'update_name', email: savedEmail, name: newName });
+          }
+
+          document.getElementById('loading-view').classList.add('hidden');
+          document.getElementById('nav-container').classList.remove('hidden');
+          document.getElementById('bottom-nav').classList.remove('hidden');
+          
+          if(state.role !== 'Admin') document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+          
+          navigate('home-view', true);
+          fetchAppData();
+          return; 
+        }
+      }
+      
+      document.getElementById('loading-view').classList.add('hidden');
+      document.getElementById('login-view').classList.remove('hidden');
+    }
+
+    async function apiCall(payload) {
+      const btn = document.activeElement;
+      const originalText = btn ? btn.innerText : '';
+      const isButton = btn && btn.tagName === 'BUTTON' && !btn.id.includes('select');
+      
+      if(isButton) {
+        btn.innerText = 'Loading...';
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+      
+      try {
+        const res = await fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        
+        if(isButton) {
+          btn.innerText = originalText;
+          btn.disabled = false;
+          btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+        return data;
+      } catch (e) {
+        if(isButton) {
+          btn.innerText = originalText;
+          btn.disabled = false;
+          btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+        console.error("API Error:", e);
+        return { success: false, message: 'Connection error. Check your Apps Script deployment URL.' };
+      }
+    }
+
+    function navigate(viewId, pushHistory = true) {
+      document.querySelectorAll('main > div').forEach(el => el.classList.add('hidden'));
+      document.getElementById(viewId).classList.remove('hidden');
+      document.getElementById('mobile-menu').classList.add('hidden');
+      
+      if (pushHistory) {
+        history.pushState({view: viewId}, "", "#" + viewId);
+      }
+      
+      if(viewId !== 'login-view' && viewId !== 'loading-view') loadViewData(viewId);
+    }
+
+    function toggleMenu() {
+      document.getElementById('mobile-menu').classList.toggle('hidden');
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      if (isLoggingIn) return; 
+      isLoggingIn = true;
+
+      const email = document.getElementById('email').value;
+      const code = document.getElementById('code').value;
+      const res = await apiCall({ action: 'login', email, code });
+      
+      if (res.success) {
+        localStorage.setItem('wc26_email', email);
+        localStorage.setItem('wc26_code', code);
+
+        state.email = email;
+        state.role = res.role;
+        
+        if (!res.name) {
+          const newName = prompt("Welcome to the WC26 Pool! Please enter your Name:");
+          if (newName) await apiCall({ action: 'update_name', email: email, name: newName });
+        }
+
+        document.getElementById('login-view').classList.add('hidden');
+        document.getElementById('nav-container').classList.remove('hidden');
+        document.getElementById('bottom-nav').classList.remove('hidden');
+        
+        if(state.role !== 'Admin') document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+        navigate('home-view', true);
+        fetchAppData();
+      } else {
+        document.getElementById('login-error').innerText = res.message;
+        document.getElementById('login-error').classList.remove('hidden');
+      }
+      isLoggingIn = false; 
+    }
+
+    async function forgotCode() {
+      const email = document.getElementById('email').value;
+      if (!email) return alert("Please enter your email first.");
+      const res = await apiCall({ action: 'forgot_code', email });
+      alert(res.message || 'If that email exists, an invite code was sent.');
+    }
+
+    async function fetchAppData() {
+      const res = await apiCall({ action: 'get_data', email: state.email });
+      if (res.success) {
+        state.data = res;
+        if (state.data.currentUser && state.data.currentUser.picks) {
+          userPicks = state.data.currentUser.picks;
+        }
+        
+        updateNavigationVisibility();
+
+        document.querySelectorAll('main > div:not(.hidden)').forEach(el => {
+          loadViewData(el.id);
+        });
+      }
+    }
+
+    function updateNavigationVisibility() {
+      if (!state.data) return;
+      const isLocked = state.data.isLocked;
+      const isAdmin = state.role === 'Admin';
+      const user = state.data.currentUser;
+      
+      // Update Dynamic Banner
+      if (user && user.name) {
+        const firstName = user.name.split(' ')[0];
+        document.getElementById('welcome-banner-title').innerText = `Welcome back, ${firstName}!`;
+      }
+      if (isLocked) {
+        document.getElementById('welcome-banner-subtitle').innerText = "The tournament is live! Good luck.";
+      } else {
+        document.getElementById('welcome-banner-subtitle').innerText = "Make sure to lock in your picks.";
+      }
+
+      const showChoose = !isLocked;
+      const showBoardStats = isLocked || isAdmin;
+
+      // Toggle Home Buttons
+      document.getElementById('btn-home-choose').classList.toggle('hidden', !showChoose);
+      document.getElementById('btn-home-board').classList.toggle('hidden', !showBoardStats);
+      document.getElementById('btn-home-stats').classList.toggle('hidden', !showBoardStats);
+
+      // Toggle Mobile Menu Buttons
+      document.getElementById('btn-menu-choose').classList.toggle('hidden', !showChoose);
+      document.getElementById('btn-menu-board').classList.toggle('hidden', !showBoardStats);
+      document.getElementById('btn-menu-stats').classList.toggle('hidden', !showBoardStats);
+
+      // Toggle Bottom Nav Icons
+      document.getElementById('btn-nav-board').classList.toggle('hidden', !showBoardStats);
+      document.getElementById('btn-nav-stats').classList.toggle('hidden', !showBoardStats);
+    }
+
+    function logout() {
+      state = { email: '', data: null, role: 'Member' };
+      userPicks = {}; 
+      localStorage.removeItem('wc26_email');
+      localStorage.removeItem('wc26_code');
+      document.getElementById('nav-container').classList.add('hidden');
+      document.getElementById('bottom-nav').classList.add('hidden');
+      document.getElementById('email').value = '';
+      document.getElementById('code').value = '';
+      document.getElementById('login-error').classList.add('hidden');
+      navigate('login-view', false);
+    }
+
+    function loadViewData(view) {
+      if(!state.data) return; 
+      if(view === 'rules-view') renderRules();
+      if(view === 'choose-view') renderChooseTeams();
+      if(view === 'admin-view') renderAdmin();
+      if(view === 'profile-view') renderProfile();
+      if(view === 'picks-view') renderPicks();
+      if(view === 'leaderboard-view') renderLeaderboard();
+      if(view === 'stats-view') renderStats();
+    }
+
+    // --- Choose Teams Logic ---
+    function renderChooseTeams() {
+      if (!state.data || !state.data.teams) {
+        document.getElementById('choose-teams-container').innerHTML = '<div class="text-center p-8 text-gray-500"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900 mx-auto mb-2"></div>Loading teams...</div>';
+        return;
+      }
+
+      if (state.data.isLocked) {
+        document.getElementById('choose-teams-container').innerHTML = `
+          <div class="p-8 text-center text-gray-500 mt-10">
+            <span class="text-5xl mb-4 block">🔒</span>
+            <h3 class="font-bold text-xl text-slate-800">Picks Locked</h3>
+            <p class="text-sm mt-2 text-gray-500">The deadline to choose teams has passed.</p>
+          </div>
+        `;
+        document.getElementById('btn-save-picks').classList.add('hidden');
+        return;
+      } else {
+        document.getElementById('btn-save-picks').classList.remove('hidden');
+      }
+
+      let html = '';
+      for(let i=1; i<=10; i++) {
+        const hasPick = !!userPicks[i];
+        const tierClass = hasPick ? 'tier-green' : 'bg-white';
+        const titleColor = hasPick ? 'text-green-800' : 'text-slate-800';
+        
+        const teamsInTier = state.data.teams.filter(t => {
+            const tierNumber = String(t.tier).replace(/\D/g, ''); 
+            return tierNumber == i;
+        });
+
+        let selectedHtml = `<span class="text-sm mt-1 text-slate-500 font-normal">Choose Tier ${i} Team</span>`;
+        if (hasPick) {
+            const t = teamsInTier.find(tm => tm.name === userPicks[i]);
+            if (t) {
+                selectedHtml = `
+                <div class="flex items-center mt-1.5">
+                  ${t.flag ? `<img src="${t.flag}" class="w-6 h-4 mr-2 object-cover border border-gray-300 rounded-sm">` : `<div class="w-6 h-4 mr-2 bg-gray-300 rounded-sm"></div>`}
+                  <span class="text-sm font-semibold text-slate-900 mr-2">${t.name}</span>
+                  <span class="text-[10px] text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded shadow-sm font-medium">Grp ${t.group}</span>
+                </div>
+                `;
+            } else {
+                selectedHtml = `<span class="text-sm mt-1 text-slate-900 font-semibold">${userPicks[i]}</span>`;
+            }
+        }
+
+        let listContent = '';
+        if (teamsInTier.length > 0) {
+            listContent += `
+              <div class="p-3 border-b border-gray-200 flex items-center hover:bg-gray-100 cursor-pointer transition active:bg-gray-200 text-red-500" onclick="selectTeam(${i}, '', '', '')">
+                <span class="w-8 mr-3 text-center text-lg font-bold">✕</span>
+                <span class="flex-1 text-sm font-medium">Clear Pick</span>
+              </div>
+            `;
+            listContent += teamsInTier.map(t => `
+                <div class="p-3 border-b border-gray-200 flex items-center hover:bg-gray-100 cursor-pointer transition active:bg-gray-200" onclick="selectTeam(${i}, '${t.name.replace(/'/g, "\\'")}', '${t.flag}', '${t.group}')">
+                  ${t.flag ? `<img src="${t.flag}" class="w-8 h-5 mr-3 object-cover border border-gray-300 rounded-sm">` : `<div class="w-8 h-5 mr-3 bg-gray-300 rounded-sm"></div>`}
+                  <span class="flex-1 text-sm font-medium text-slate-700">${t.name}</span>
+                  <span class="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded shadow-sm font-medium">Grp ${t.group}</span>
+                </div>
+              `).join('');
+        } else {
+            listContent = `<div class="p-4 text-sm text-gray-400 italic text-center">No teams found. Check the "Tier" column on your sheet!</div>`;
+        }
+
+        html += `
+          <div id="tier-card-${i}" class="app-card mb-3 overflow-hidden ${tierClass}">
+            <div class="p-4 flex justify-between items-center cursor-pointer font-semibold border-b border-transparent hover:bg-gray-50 transition" onclick="toggleTier(${i})">
+              <div class="flex flex-col flex-1">
+                <div class="flex items-center justify-between">
+                  <span id="tier-label-${i}" class="${titleColor}">Tier ${i}</span>
+                  ${i >= 8 ? `<span class="ml-2 mr-3 text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full uppercase tracking-wider">2x Points</span>` : ''}
+                </div>
+                <div id="selected-tier-container-${i}">${selectedHtml}</div>
+              </div>
+              <span id="chevron-${i}" class="transform transition-transform duration-200 text-slate-400">▼</span>
+            </div>
+            <div id="tier-list-${i}" class="hidden bg-gray-50 border-t border-gray-200">
+              ${listContent}
+            </div>
+          </div>
+        `;
+      }
+      document.getElementById('choose-teams-container').innerHTML = html;
+    }
+
+    function toggleTier(tier) {
+      const list = document.getElementById(`tier-list-${tier}`);
+      const chevron = document.getElementById(`chevron-${tier}`);
+      list.classList.toggle('hidden');
+      if (list.classList.contains('hidden')) {
+        chevron.classList.remove('rotate-180');
+      } else {
+        chevron.classList.add('rotate-180');
+      }
+    }
+
+    function selectTeam(tier, teamName, flag, group) {
+      const card = document.getElementById(`tier-card-${tier}`);
+      const container = document.getElementById(`selected-tier-container-${tier}`);
+      const tierLabel = document.getElementById(`tier-label-${tier}`);
+
+      if (!teamName) {
+        delete userPicks[tier];
+        container.innerHTML = `<span class="text-sm mt-1 text-slate-500 font-normal fade-in">Choose Tier ${tier} Team</span>`;
+        card.classList.remove('tier-green');
+        tierLabel.classList.remove('text-green-800');
+        tierLabel.classList.add('text-slate-800');
+      } else {
+        userPicks[tier] = teamName;
+        container.innerHTML = `
+          <div class="flex items-center mt-1.5 fade-in">
+            ${flag && flag !== 'undefined' ? `<img src="${flag}" class="w-6 h-4 mr-2 object-cover border border-gray-300 rounded-sm">` : `<div class="w-6 h-4 mr-2 bg-gray-300 rounded-sm"></div>`}
+            <span class="text-sm font-semibold text-slate-900 mr-2">${teamName}</span>
+            <span class="text-[10px] text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded shadow-sm font-medium">Grp ${group}</span>
+          </div>
+        `;
+        card.classList.add('tier-green');
+        tierLabel.classList.remove('text-slate-800');
+        tierLabel.classList.add('text-green-800');
+      }
+      toggleTier(tier); 
+    }
+
+    async function submitPicks() {
+      const res = await apiCall({ action: 'submit_picks', email: state.email, picks: userPicks });
+      if(res && res.success) {
+        alert("Picks saved successfully!");
+        fetchAppData(); 
+      } else {
+        alert(res.message || "Error saving picks to the database.");
+      }
+    }
+
+    // --- My Picks Logic ---
+    function renderPicks() {
+      if (!state.data || !state.data.currentUser) return;
+      
+      const user = state.data.currentUser;
+      const todayStr = new Date().toLocaleDateString('en-US'); 
+      
+      let html = `
+        <div class="flex justify-between items-center bg-slate-900 text-white p-5 rounded-2xl mb-6 shadow-md">
+          <div class="flex flex-col">
+            <span class="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Total Points</span>
+            <span class="text-3xl font-bold">${user.points || 0}</span>
+          </div>
+          <div class="flex flex-col text-right">
+            <span class="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Rank</span>
+            <span class="text-3xl font-bold">${user.rank ? '#' + user.rank : '-'}</span>
+          </div>
+        </div>
+        <h2 class="text-2xl font-bold mb-4 px-1 text-slate-800">My Picks</h2>
+        <div class="space-y-3">
+      `;
+
+      for (let i = 1; i <= 10; i++) {
+        const teamName = userPicks[i];
+        
+        if (!teamName) {
+          html += `
+            <div class="app-card overflow-hidden bg-red-50 border-red-200">
+              <div class="p-4 flex flex-col">
+                <span class="text-sm font-semibold text-red-800 mb-1">Tier ${i}</span>
+                <span class="text-sm font-medium text-red-600">Pick Missing</span>
+              </div>
+            </div>
+          `;
+        } else {
+          const t = state.data.teams.find(tm => tm.name === teamName) || { name: teamName, flag: '', group: '', points: 0, eliminated: false };
+          const teamGames = state.data.scores.filter(s => s.home === teamName || s.away === teamName);
+          
+          const gameToday = teamGames.find(g => {
+            const gameDate = new Date(g.date).toLocaleDateString('en-US');
+            return gameDate === todayStr;
+          });
+          
+          let schedulePill = '';
+          if (t.eliminated) {
+            schedulePill = `<span class="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded-full ml-auto">❌ Eliminated</span>`;
+          } else if (gameToday) {
+            if (gameToday.systemStatus === 'STATUS_FINAL') {
+                schedulePill = `<span class="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded-full ml-auto">Game Complete</span>`;
+            } else if (gameToday.systemStatus === 'STATUS_IN_PROGRESS') {
+                schedulePill = `<span class="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full ml-auto">Game Active</span>`;
+            } else if (gameToday.systemStatus === 'STATUS_SCHEDULED') {
+                schedulePill = `<span class="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full ml-auto">Game Today</span>`;
+            }
+          }
+
+          let gamesHtml = '';
+          if (teamGames.length > 0) {
+            gamesHtml = `
+              <table class="w-full text-[11px] text-left text-slate-600">
+                <thead class="text-slate-400 font-medium pb-2 block">
+                  <tr class="flex w-full">
+                    <th class="w-2/12 font-medium">Date</th>
+                    <th class="w-4/12 font-medium">Opponent</th>
+                    <th class="w-3/12 font-medium">Status</th>
+                    <th class="w-2/12 font-medium text-center">Score</th>
+                    <th class="w-1/12 font-medium text-right">Pts</th>
+                  </tr>
+                </thead>
+                <tbody class="block space-y-2">
+            `;
+            
+            teamGames.forEach(game => {
+              const isHome = game.home === teamName;
+              const opponent = isHome ? game.away : game.home;
+              const points = isHome ? game.homePts : game.awayPts;
+              
+              let gameDate = game.date;
+              try {
+                const d = new Date(game.date);
+                if(!isNaN(d)) gameDate = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+              } catch(e){}
+
+              let displayStatus = '-';
+              if (game.systemStatus === 'STATUS_SCHEDULED') {
+                displayStatus = 'Scheduled';
+              } else if (game.systemStatus === 'STATUS_FINAL') {
+                displayStatus = 'Final';
+              } else if (game.systemStatus === 'STATUS_IN_PROGRESS') {
+                displayStatus = (game.clock && String(game.clock).trim() !== '') ? game.clock : 'Live';
+              } else {
+                displayStatus = game.status || '-';
+              }
+              
+              gamesHtml += `
+                <tr class="flex w-full items-center">
+                  <td class="w-2/12">${gameDate}</td>
+                  <td class="w-4/12 font-semibold text-slate-700 truncate pr-2">${opponent}</td>
+                  <td class="w-3/12">${displayStatus}</td>
+                  <td class="w-2/12 font-semibold text-center">${game.scoreText || '-'}</td>
+                  <td class="w-1/12 text-right font-bold ${points > 0 ? 'text-green-600' : 'text-slate-500'}">${points || 0}</td>
+                </tr>
+              `;
+            });
+            gamesHtml += `</tbody></table>`;
+          } else {
+            gamesHtml = `<div class="text-xs text-gray-500 italic">No games scheduled yet.</div>`;
+          }
+
+          html += `
+            <div class="app-card overflow-hidden bg-white">
+              <div class="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition" onclick="toggleMyPick(${i})">
+                <div class="flex flex-col flex-1">
+                  <div class="flex items-center mb-1.5">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tier ${i}</span>
+                    ${i >= 8 ? `<span class="ml-2 text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-full uppercase tracking-wider">2x Points</span>` : ''}
+                  </div>
+                  <div class="flex items-center">
+                    ${t.flag ? `<img src="${t.flag}" class="w-6 h-4 mr-2 object-cover border border-gray-300 rounded-sm">` : `<div class="w-6 h-4 mr-2 bg-gray-300 rounded-sm"></div>`}
+                    <span class="text-base font-bold text-slate-900 mr-2">${t.name}</span>
+                    <span class="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded shadow-sm font-medium">Grp ${t.group}</span>
+                  </div>
+                </div>
+                <div class="flex flex-col items-end pl-4 border-l border-gray-100">
+                    <div class="flex items-center mb-1">
+                      ${schedulePill}
+                      <span class="text-lg font-bold text-slate-800 leading-none ml-2">${t.points || 0}</span>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-medium">PTS</span>
+                    <span id="my-pick-chevron-${i}" class="transform transition-transform duration-200 text-slate-300 text-xs mt-1">▼</span>
+                </div>
+              </div>
+              <div id="my-pick-list-${i}" class="hidden bg-slate-50 border-t border-gray-100 p-4">
+                ${gamesHtml}
+              </div>
+            </div>
+          `;
+        }
+      }
+      
+      html += `</div>`;
+      document.getElementById('picks-view').innerHTML = html;
+    }
+
+    function toggleMyPick(tier) {
+      const list = document.getElementById(`my-pick-list-${tier}`);
+      const chevron = document.getElementById(`my-pick-chevron-${tier}`);
+      if(list && chevron) {
+          list.classList.toggle('hidden');
+          chevron.classList.toggle('rotate-180');
+      }
+    }
+
+    // --- Leaderboard Logic ---
+    function renderLeaderboard() {
+      if (!state.data || !state.data.users) return;
+      
+      if (!state.data.isLocked && state.role !== 'Admin') {
+        document.getElementById('leaderboard-view').innerHTML = `
+          <div class="p-8 text-center text-gray-500 mt-10">
+            <span class="text-5xl mb-4 block">🔒</span>
+            <h3 class="font-bold text-xl text-slate-800">Leaderboard Locked</h3>
+            <p class="text-sm mt-2 text-gray-500">The leaderboard will be revealed once picks lock on June 11th at 2:00 PM CST.</p>
+          </div>
+        `;
+        return;
+      }
+      
+      const sortedUsers = [...state.data.users].sort((a,b) => (b.points || 0) - (a.points || 0));
+      
+      let html = `<h2 class="text-2xl font-bold mb-6 text-slate-800 px-1">Leaderboard</h2><div class="space-y-3">`;
+      
+      sortedUsers.forEach((u, index) => {
+        const rank = index + 1;
+        const userPicksData = u.picks || {};
+        
+        html += `
+          <div class="app-card overflow-hidden">
+            <div class="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition" onclick="toggleLeaderboardUser(${rank})">
+              <div class="flex items-center flex-1">
+                <span class="text-lg font-bold text-slate-400 w-8">#${rank}</span>
+                <span class="font-bold text-slate-800">${u.name || 'Unknown'}</span>
+              </div>
+              <span class="text-xl font-bold text-indigo-600">${u.points || 0}</span>
+            </div>
+            <div id="lb-user-${rank}" class="hidden bg-gray-50 border-t border-gray-100 p-4">
+              <table class="w-full text-xs text-left">
+                <thead class="text-gray-400 uppercase text-[10px]"><tr><th class="pb-2">Tier</th><th class="pb-2">Team</th><th class="pb-2 text-right">Pts</th></tr></thead>
+                <tbody>
+                  ${[...Array(10)].map((_, i) => {
+                    const tier = i + 1;
+                    const teamName = userPicksData[tier] || '-';
+                    const t = state.data.teams.find(tm => tm.name === teamName) || { points: 0, eliminated: false };
+                    const tierLabel = tier >= 8 ? `T${tier} <span class="text-indigo-500 font-bold text-[9px]">(2x)</span>` : `T${tier}`;
+                    const elimIcon = t.eliminated ? '<span class="text-[10px] ml-1 flex-shrink-0">❌</span>' : '';
+                    return `<tr><td class="py-1 text-slate-400 font-medium whitespace-nowrap">${tierLabel}</td><td class="py-1 font-semibold text-slate-700 w-full px-2 flex items-center"><span class="truncate">${teamName}</span>${elimIcon}</td><td class="py-1 text-right">${t.points || 0}</td></tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      });
+      html += `</div>`;
+      document.getElementById('leaderboard-view').innerHTML = html;
+    }
+
+    function toggleLeaderboardUser(rank) {
+      const el = document.getElementById(`lb-user-${rank}`);
+      if(el) el.classList.toggle('hidden');
+    }
+
+    function changeBracketRound(round) {
+      statsBracketRound = round;
+      renderStats();
+    }
+
+    // --- Stats Logic (CONDENSED TABLE VIEW WITH HIGHLIGHT & BRACKET) ---
+    function renderStats() {
+      if (!state.data || !state.data.teams || !state.data.users) return;
+
+      if (!state.data.isLocked && state.role !== 'Admin') {
+        document.getElementById('stats-view').innerHTML = `
+          <div class="p-8 text-center text-gray-500 mt-10">
+            <span class="text-5xl mb-4 block">🔒</span>
+            <h3 class="font-bold text-xl text-slate-800">Stats Locked</h3>
+            <p class="text-sm mt-2 text-gray-500">Global team stats will be revealed once picks lock on June 11th at 2:00 PM CST.</p>
+          </div>
+        `;
+        return;
+      }
+      
+      const totalUsers = state.data.users.length;
+      
+      let html = `
+        <h2 class="text-2xl font-bold mb-1 px-1 text-slate-800">Team Stats</h2>
+        <div class="px-1 mb-4">
+          <span class="bg-yellow-100 border border-yellow-200 text-yellow-800 text-[10px] px-2 py-0.5 rounded font-medium shadow-sm">Your Teams in Yellow</span>
+        </div>
+        <div class="flex bg-gray-200 p-1 rounded-lg mb-4 shadow-inner">
+          <button onclick="changeStatsMode('Tier')" class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition ${statsSortMode === 'Tier' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}">By Tier</button>
+          <button onclick="changeStatsMode('Group')" class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition ${statsSortMode === 'Group' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}">By Group</button>
+          <button onclick="changeStatsMode('Bracket')" class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition ${statsSortMode === 'Bracket' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}">Bracket</button>
+        </div>
+      `;
+
+      if (statsSortMode === 'Bracket') {
+        // --- Bracket View Logic ---
+        html += `
+          <div class="flex w-full bg-slate-100 p-1 rounded-lg mb-6 shadow-sm border border-gray-200 justify-between">
+            <button onclick="changeBracketRound('R32')" class="flex-1 py-1.5 rounded-md text-[10px] sm:text-[11px] font-bold transition ${statsBracketRound === 'R32' ? 'bg-slate-800 text-white shadow-sm' : 'text-gray-500 hover:text-slate-700'}">R32</button>
+            <button onclick="changeBracketRound('R16')" class="flex-1 py-1.5 rounded-md text-[10px] sm:text-[11px] font-bold transition ${statsBracketRound === 'R16' ? 'bg-slate-800 text-white shadow-sm' : 'text-gray-500 hover:text-slate-700'}">R16</button>
+            <button onclick="changeBracketRound('QF')" class="flex-1 py-1.5 rounded-md text-[10px] sm:text-[11px] font-bold transition ${statsBracketRound === 'QF' ? 'bg-slate-800 text-white shadow-sm' : 'text-gray-500 hover:text-slate-700'}">QF</button>
+            <button onclick="changeBracketRound('SF')" class="flex-1 py-1.5 rounded-md text-[10px] sm:text-[11px] font-bold transition ${statsBracketRound === 'SF' ? 'bg-slate-800 text-white shadow-sm' : 'text-gray-500 hover:text-slate-700'}">SF</button>
+            <button onclick="changeBracketRound('Final')" class="flex-1 py-1.5 rounded-md text-[10px] sm:text-[11px] font-bold transition ${statsBracketRound === 'Final' ? 'bg-slate-800 text-white shadow-sm' : 'text-gray-500 hover:text-slate-700'}">Finals</button>
+          </div>
+        `;
+
+        const getRound = (game) => {
+            try {
+                const d = new Date(game.date);
+                if (!isNaN(d)) {
+                    const md = (d.getMonth() + 1) * 100 + d.getDate();
+                    if (md >= 628 && md <= 703) return 'R32';
+                    if (md >= 704 && md <= 707) return 'R16';
+                    if (md >= 709 && md <= 711) return 'QF';
+                    if (md >= 714 && md <= 715) return 'SF';
+                    if (md >= 718 && md <= 719) return 'Final'; 
+                }
+            } catch(e) {}
+
+            const combined = ((game.status||'') + ' ' + (game.home||'') + ' ' + (game.away||'')).toLowerCase();
+            if(combined.includes('32')) return 'R32';
+            if(combined.includes('16')) return 'R16';
+            if(combined.includes('quarter') || combined.includes('qf') || combined.includes('1/4')) return 'QF';
+            if(combined.includes('semi') || combined.includes('sf') || combined.includes('1/2')) return 'SF';
+            if(combined.includes('final') || combined.includes('3rd') || combined.includes('third')) return 'Final';
+            
+            return '';
+        };
+
+        const bracketScores = state.data.scores.filter(s => getRound(s) === statsBracketRound);
+
+        if (bracketScores.length === 0) {
+            html += `<div class="p-6 text-center text-gray-400 text-sm border border-dashed border-gray-300 rounded-lg">No matches scheduled for this round yet.</div>`;
+        } else {
+            bracketScores.forEach(game => {
+                const homeName = game.home || 'TBD';
+                const awayName = game.away || 'TBD';
+                
+                const homeTeam = state.data.teams.find(t => t.name === homeName) || { name: homeName, flag: '', eliminated: false };
+                const awayTeam = state.data.teams.find(t => t.name === awayName) || { name: awayName, flag: '', eliminated: false };
+
+                const homeIsMyPick = Object.values(userPicks).includes(homeTeam.name);
+                const awayIsMyPick = Object.values(userPicks).includes(awayTeam.name);
+
+                let homeGoals = '-', awayGoals = '-';
+                if (game.scoreText && game.scoreText.includes('-')) {
+                    const pts = game.scoreText.split('-');
+                    homeGoals = pts[0].trim();
+                    awayGoals = pts[1].trim();
+                } else if (game.scoreText) {
+                    homeGoals = game.scoreText;
+                    awayGoals = '';
+                }
+
+                let homeWinner = false;
+                let awayWinner = false;
+                if (game.systemStatus === 'STATUS_FINAL') {
+                    const hG = parseInt(homeGoals);
+                    const aG = parseInt(awayGoals);
+                    if (!isNaN(hG) && !isNaN(aG)) {
+                        if (hG > aG) homeWinner = true;
+                        if (aG > hG) awayWinner = true;
+                        if (hG === aG) {
+                            if (awayTeam.eliminated && !homeTeam.eliminated) homeWinner = true;
+                            if (homeTeam.eliminated && !awayTeam.eliminated) awayWinner = true;
+                        }
+                    }
+                }
+
+                const homeIs2x = game.homeMultiplier == 2 || String(game.homeMultiplier).toLowerCase().includes('2x');
+                const awayIs2x = game.awayMultiplier == 2 || String(game.awayMultiplier).toLowerCase().includes('2x');
+
+                const homeElimIcon = homeTeam.eliminated ? '<span class="text-[10px] ml-1.5 flex-shrink-0">❌</span>' : '';
+                const awayElimIcon = awayTeam.eliminated ? '<span class="text-[10px] ml-1.5 flex-shrink-0">❌</span>' : '';
+                const homeWinIcon = homeWinner ? '<span class="text-[12px] ml-1.5 flex-shrink-0 text-green-500">➡️</span>' : '';
+                const awayWinIcon = awayWinner ? '<span class="text-[12px] ml-1.5 flex-shrink-0 text-green-500">➡️</span>' : '';
+                const home2xIcon = homeIs2x ? '<span class="text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-full ml-1.5 flex-shrink-0">2X</span>' : '';
+                const away2xIcon = awayIs2x ? '<span class="text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-full ml-1.5 flex-shrink-0">2X</span>' : '';
+                
+                let gameDate = game.date;
+                try { 
+                  const d = new Date(game.date); 
+                  if(!isNaN(d)) {
+                    gameDate = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) + ' - ' + d.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
+                  }
+                } catch(e){}
+
+                html += `
+                <div class="app-card mb-4 overflow-hidden shadow-sm border-gray-200">
+                  <div class="p-2.5">
+                    <table class="w-full text-sm text-left border-collapse">
+                      <thead>
+                        <tr>
+                          <th class="w-full"></th>
+                          <th class="px-2 pb-2 text-right text-[10px] font-medium text-slate-400 uppercase tracking-wider w-8">Score</th>
+                          <th class="px-2 pb-2 text-right text-[10px] font-medium text-slate-400 uppercase tracking-wider w-12">Pts</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="${homeIsMyPick ? 'bg-yellow-50' : 'bg-transparent'} rounded-md">
+                           <td class="py-2 px-2 flex items-center font-semibold text-slate-800 w-full">
+                              ${homeTeam.flag ? `<img src="${homeTeam.flag}" class="w-5 h-3.5 mr-2.5 object-cover border border-gray-200 rounded-sm flex-shrink-0">` : '<div class="w-5 h-3.5 mr-2.5 flex-shrink-0 bg-gray-200 rounded-sm"></div>'}
+                              <span class="truncate">${homeTeam.name}</span>
+                              ${homeElimIcon}${homeWinIcon}${home2xIcon}
+                           </td>
+                           <td class="py-2 px-2 text-right font-bold text-slate-700 w-8">${homeGoals}</td>
+                           <td class="py-2 px-2 text-right font-bold text-indigo-600 w-12 text-xs">${game.homePts || 0}</td>
+                        </tr>
+                        <tr class="${awayIsMyPick ? 'bg-yellow-50' : 'bg-transparent'} rounded-md">
+                           <td class="py-2 px-2 flex items-center font-semibold text-slate-800 w-full">
+                              ${awayTeam.flag ? `<img src="${awayTeam.flag}" class="w-5 h-3.5 mr-2.5 object-cover border border-gray-200 rounded-sm flex-shrink-0">` : '<div class="w-5 h-3.5 mr-2.5 flex-shrink-0 bg-gray-200 rounded-sm"></div>'}
+                              <span class="truncate">${awayTeam.name}</span>
+                              ${awayElimIcon}${awayWinIcon}${away2xIcon}
+                           </td>
+                           <td class="py-2 px-2 text-right font-bold text-slate-700 w-8">${awayGoals}</td>
+                           <td class="py-2 px-2 text-right font-bold text-indigo-600 w-12 text-xs">${game.awayPts || 0}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="bg-slate-50 border-t border-gray-100 px-3 py-2 flex justify-between items-center">
+                     <span class="text-[10px] text-gray-500 font-medium">${gameDate}</span>
+                     <span class="text-[10px] text-gray-500 font-medium uppercase tracking-wider">${game.status === 'STATUS_SCHEDULED' ? 'Scheduled' : game.status}</span>
+                  </div>
+                </div>
+                `;
+            });
+        }
+      } else {
+        // --- Tier & Group View Logic ---
+        let teams = state.data.teams.map(t => {
+          const pickCount = state.data.users.filter(u => Object.values(u.picks || {}).includes(t.name)).length;
+          const percent = totalUsers > 0 ? Math.round((pickCount / totalUsers) * 100) : 0;
+          return { ...t, percent };
+        });
+        
+        if (statsSortMode === 'Tier') {
+          teams.sort((a, b) => {
+            const tierA = parseInt(a.tier.toString().replace(/\D/g, ''));
+            const tierB = parseInt(b.tier.toString().replace(/\D/g, ''));
+            if (tierA !== tierB) return tierA - tierB;
+            return b.points - a.points; 
+          });
+        } else {
+          teams.sort((a, b) => String(a.group).localeCompare(String(b.group)) || b.points - a.points);
+        }
+
+        const grouped = teams.reduce((acc, team) => {
+          const key = statsSortMode === 'Tier' ? `Tier ${team.tier}` : `Group ${team.group}`;
+          if (!acc[key]) acc[key] = [];
+          acc[key].push(team);
+          return acc;
+        }, {});
+
+        for (const [groupName, groupTeams] of Object.entries(grouped)) {
+          let badgeHtml = '';
+          if (statsSortMode === 'Tier') {
+            const tierNum = parseInt(groupName.replace(/\D/g, ''));
+            if (tierNum >= 8) {
+              badgeHtml = `<span class="ml-2 text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full uppercase tracking-wider align-middle inline-block">2x Points</span>`;
+            }
+          }
+
+          html += `
+            <div class="flex items-center mb-3 mt-6 px-1">
+              <h3 class="text-sm font-bold text-slate-500 uppercase tracking-widest m-0">${groupName}</h3>
+              ${badgeHtml}
+            </div>
+            <div class="app-card overflow-hidden !p-0 mb-6 shadow-sm border-gray-200">
+              <div class="w-full">
+                <table class="w-full text-[10px] text-center border-collapse">
+                  <thead class="bg-gray-100 text-gray-500 border-b border-gray-200 leading-tight">
+                    <tr>
+                      <th class="py-2 px-1 text-left font-semibold sticky left-0 bg-gray-100 z-10 shadow-[1px_0_0_#e2e8f0]">Team</th>
+                      <th class="py-2 px-0.5 font-semibold border-l border-gray-200">%</th>
+                      <th class="py-2 px-0.5 font-semibold border-l border-gray-200">Grp</th>
+                      <th class="py-2 px-0.5 font-semibold border-l border-gray-200">R32</th>
+                      <th class="py-2 px-0.5 font-semibold border-l border-gray-200">R16</th>
+                      <th class="py-2 px-0.5 font-semibold border-l border-gray-200">QF</th>
+                      <th class="py-2 px-0.5 font-semibold border-l border-gray-200">SF</th>
+                      <th class="py-2 px-0.5 font-semibold border-l border-gray-200">F</th>
+                      <th class="py-2 px-1 font-bold text-slate-800 border-l border-gray-200 bg-gray-100">Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100 bg-white">
+          `;
+
+          groupTeams.forEach(t => {
+            const st = t.stagePts || {grp:0, r32:0, r16:0, qf:0, sf:0, f:0};
+            const isMyPick = Object.values(userPicks).includes(t.name);
+            
+            const rowBg = isMyPick ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-slate-50';
+            const stickyBg = isMyPick ? 'bg-yellow-50 shadow-[1px_0_0_#fef9c3]' : 'bg-white shadow-[1px_0_0_#f1f5f9]';
+            const ptsBg = isMyPick ? 'bg-yellow-100' : 'bg-slate-50';
+            const elimIcon = t.eliminated ? '<span class="text-[8px] ml-1 flex-shrink-0">❌</span>' : '';
+
+            html += `
+              <tr class="${rowBg} transition">
+                <td class="py-1.5 px-1 text-left font-semibold text-slate-800 sticky left-0 ${stickyBg} z-10 max-w-[85px]">
+                  <div class="flex items-center">
+                    ${t.flag ? `<img src="${t.flag}" class="w-4 h-3 mr-1.5 object-cover border border-gray-200 rounded-sm flex-shrink-0">` : ''}
+                    <span class="truncate text-[10px]">${t.name}</span>
+                    ${elimIcon}
+                  </div>
+                </td>
+                <td class="py-1.5 px-0.5 border-l border-gray-100 text-blue-600 font-medium">${t.percent}%</td>
+                <td class="py-1.5 px-0.5 border-l border-gray-100 text-slate-600">${st.grp}</td>
+                <td class="py-1.5 px-0.5 border-l border-gray-100 text-slate-600">${st.r32}</td>
+                <td class="py-1.5 px-0.5 border-l border-gray-100 text-slate-600">${st.r16}</td>
+                <td class="py-1.5 px-0.5 border-l border-gray-100 text-slate-600">${st.qf}</td>
+                <td class="py-1.5 px-0.5 border-l border-gray-100 text-slate-600">${st.sf}</td>
+                <td class="py-1.5 px-0.5 border-l border-gray-100 text-slate-600">${st.f}</td>
+                <td class="py-1.5 px-1 font-bold text-indigo-700 border-l border-gray-100 ${ptsBg}">${t.points}</td>
+              </tr>
+            `;
+          });
+          html += `</tbody></table></div></div>`;
+        }
+      }
+      document.getElementById('stats-view').innerHTML = html;
+    }
+
+    function changeStatsMode(mode) {
+      statsSortMode = mode;
+      renderStats();
+    }
+
+    // --- Admin Logic ---
+    function renderAdmin() {
+      if (!state.data || state.role !== 'Admin') return;
+      const container = document.getElementById('admin-container');
+
+      let html = `
+        <button onclick="adminInvitePrompt()" class="w-full bg-slate-900 text-white font-semibold py-3 rounded-full hover:bg-slate-800 transition mb-8 shadow-sm flex justify-center items-center">
+          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          Invite New User
+        </button>
+        <h3 class="font-bold text-lg mb-3 border-b pb-2 text-slate-800">User Management</h3>
+        <div class="space-y-3">
+      `;
+
+      const validUsers = state.data.users ? state.data.users.filter(u => u.email && String(u.email).trim() !== '') : [];
+
+      if(validUsers.length > 0) {
+        validUsers.forEach(u => {
+          let paidToggleText = u.paid ? 'Mark as Unpaid' : 'Mark as Paid';
+          let roleToggleText = u.role === 'Admin' ? 'Change to Member' : 'Promote to Admin';
+          
+          html += `
+            <div class="app-card p-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+              <div>
+                <div class="font-semibold text-slate-800">${u.name || 'No Name Set'}</div>
+                <div class="text-xs text-slate-400 mb-1.5">${u.email}</div>
+                <div class="text-xs text-slate-500 flex flex-wrap gap-2">
+                  <span class="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Role: ${u.role || 'Member'}</span>
+                  <span class="${u.paid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'} border px-2 py-0.5 rounded">Paid: ${u.paid ? 'Yes' : 'No'}</span>
+                  <span class="bg-blue-50 text-blue-700 border-blue-200 border px-2 py-0.5 rounded">${u.status || 'Unknown'}</span>
+                </div>
+              </div>
+              <select onchange="handleAdminAction(this, '${u.email}', '${u.role}', ${u.paid})" class="text-sm border border-gray-300 rounded-lg p-2 bg-white focus:ring-slate-900 focus:border-slate-900 outline-none">
+                <option value="">Actions...</option>
+                <option value="resend">Resend Invite Code</option>
+                <option value="paid">${paidToggleText}</option>
+                <option value="promote">${roleToggleText}</option>
+                ${u.role !== 'Admin' ? `<option value="remove" class="text-red-600 font-medium">Remove User</option>` : ''}
+              </select>
+            </div>
+          `;
+        });
+      } else {
+        html += `<div class="p-4 text-center text-sm text-gray-500 bg-gray-50 rounded-lg border border-dashed">No users found.</div>`;
+      }
+
+      html += `</div>`;
+      container.innerHTML = html;
+    }
+
+    async function adminInvitePrompt() {
+      const email = prompt("Enter the email address to invite:");
+      if (!email) return;
+
+      const res = await apiCall({ action: 'admin_invite', email: email });
+      if(res && res.success) {
+        alert("Invite sent successfully!");
+        fetchAppData(); 
+      } else {
+        alert("Error sending invite. Make sure your Apps Script URL is correct.");
+      }
+    }
+
+    async function handleAdminAction(selectElement, email, currentRole, currentPaid) {
+      const action = selectElement.value;
+      if (!action) return;
+      selectElement.value = ''; 
+      
+      let confirmMsg = "";
+      if (action === 'resend') confirmMsg = `Resend invite code to ${email}?`;
+      if (action === 'paid') confirmMsg = currentPaid ? `Mark ${email} as unpaid?` : `Mark ${email} as paid?`;
+      if (action === 'promote') confirmMsg = currentRole === 'Admin' ? `Demote ${email} to Member?` : `Promote ${email} to Admin?`;
+      if (action === 'remove') confirmMsg = `WARNING: Are you sure you want to completely remove ${email} and delete all their picks? This cannot be undone.`;
+
+      if (!confirm(confirmMsg)) return;
+
+      const res = await apiCall({ action: 'admin_action', actionType: action, userEmail: email });
+      if(res && res.success) {
+        alert("Action completed successfully.");
+        fetchAppData(); 
+      } else {
+        alert(res.message || "Error completing action. Check your backend deployment.");
+      }
+    }
+
+    function renderProfile() {
+      const user = state.data.currentUser;
+      if (!user) return;
+
+      const html = `
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <input type="text" id="profile-name-input" value="${user.name || ''}" class="w-full border-gray-300 rounded-lg shadow-sm p-3 border focus:ring-slate-900 outline-none transition" placeholder="Enter your name">
+        </div>
+        <div class="mt-4">
+          <label class="block text-sm font-medium text-gray-500 mb-1">Email (Read Only)</label>
+          <input type="email" value="${user.email}" class="w-full bg-gray-50 border-gray-200 text-gray-500 rounded-lg shadow-sm p-3 border outline-none" disabled>
+        </div>
+        
+        <div class="mt-6 flex flex-col gap-3">
+          <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
+            <span class="text-sm font-medium text-gray-600">Account Status</span>
+            <span class="text-sm font-semibold text-blue-700 bg-blue-50 px-3 py-1 rounded border border-blue-200">${user.status || 'Unknown'}</span>
+          </div>
+          <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
+            <span class="text-sm font-medium text-gray-600">Entry Fee</span>
+            <span class="text-sm font-semibold ${user.paid ? 'text-green-700 bg-green-50 border-green-200' : 'text-red-700 bg-red-50 border-red-200'} px-3 py-1 rounded border">${user.paid ? 'Paid' : 'Unpaid'}</span>
+          </div>
+        </div>
+
+        <button onclick="saveProfile()" class="w-full bg-slate-900 text-white font-semibold py-3 rounded-full hover:bg-slate-800 transition shadow-md mt-6">Save Profile</button>
+      `;
+      document.getElementById('profile-container').innerHTML = html;
+    }
+
+    async function saveProfile() {
+      const newName = document.getElementById('profile-name-input').value;
+      const res = await apiCall({ action: 'update_name', email: state.email, name: newName });
+      if(res && res.success) {
+        alert("Profile updated successfully!");
+        fetchAppData();
+      } else {
+        alert("Error saving profile.");
+      }
+    }
+
+    function renderRules() {
+      let payoutsHtml = '';
+      if (state.data && state.data.payouts && state.data.payouts.length > 0) {
+        payoutsHtml = state.data.payouts.map(p => `<li>${p.place}: ${p.amount}</li>`).join('');
+      } else {
+        payoutsHtml = `<li>Payouts pending...</li>`;
+      }
+
+      const html = `
+        <div class="app-card p-6 mb-4">
+          <h3 class="font-bold text-lg mb-2 border-b pb-2">Payouts</h3>
+          <ul class="text-gray-700 space-y-2 mt-3 font-medium text-sm">
+            ${payoutsHtml}
+          </ul>
+        </div>
+        <div class="app-card p-6 mb-4">
+          <h3 class="font-bold text-lg mb-2 text-gray-800 border-b pb-2">Scoring Rules</h3>
+          <ul class="text-sm text-gray-700 space-y-2 mt-3">
+            <li class="flex justify-between"><span>Goal</span><span class="font-semibold">1 pt</span></li>
+            <li class="flex justify-between"><span>Shutout</span><span class="font-semibold">1 pt</span></li>
+            <li class="flex justify-between"><span>Win (Group Stage)</span><span class="font-semibold">3 pts</span></li>
+            <li class="flex justify-between"><span>Tie (Group Stage)</span><span class="font-semibold">1 pt</span></li>
+            <li class="flex justify-between"><span>Win Group</span><span class="font-semibold">8 pts</span></li>
+            <li class="flex justify-between"><span>2nd in Group</span><span class="font-semibold">4 pts</span></li>
+            <li class="flex justify-between"><span>Reach R16</span><span class="font-semibold">8 pts</span></li>
+            <li class="flex justify-between"><span>Reach QF</span><span class="font-semibold">12 pts</span></li>
+            <li class="flex justify-between"><span>Reach SF</span><span class="font-semibold">24 pts</span></li>
+            <li class="flex justify-between"><span>Reach Final</span><span class="font-semibold">36 pts</span></li>
+            <li class="flex justify-between"><span>Win Final</span><span class="font-semibold">48 pts</span></li>
+            <li class="mt-2 text-red-500 font-bold bg-red-50 p-2 rounded text-center">Tiers 8-10 = Double Pts.</li>
+          </ul>
+        </div>
+      `;
+      document.getElementById('rules-content').innerHTML = html;
+    }
+
+    window.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</head>
+<body class="text-slate-800 pb-20">
+  <header id="nav-container" class="hidden bg-white shadow-sm sticky top-0 z-50">
+    <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+      <button onclick="toggleMenu()" class="p-2 -ml-2 text-gray-600"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
+      <img src="icon.png" alt="Logo" class="h-10 cursor-pointer" onclick="navigate('home-view')">
+      <div class="w-8"></div>
+    </div>
+  </header>
+  <div id="mobile-menu" class="hidden fixed inset-0 z-50 bg-gray-900 bg-opacity-50">
+    <div class="bg-white w-64 h-full flex flex-col shadow-xl transform transition-transform">
+      <div class="p-4 border-b flex justify-between items-center bg-slate-50">
+        <span class="font-bold text-lg text-slate-800">Menu</span>
+        <button onclick="toggleMenu()" class="text-gray-500 text-2xl hover:text-slate-900">&times;</button>
+      </div>
+      <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+        <button onclick="navigate('home-view')" class="w-full text-left p-3 hover:bg-gray-100 rounded-lg text-slate-700 font-medium transition">Home</button>
+        <button id="btn-menu-choose" onclick="navigate('choose-view')" class="w-full text-left p-3 hover:bg-gray-100 rounded-lg text-slate-700 font-medium transition">Choose Teams</button>
+        <button onclick="navigate('picks-view')" class="w-full text-left p-3 hover:bg-gray-100 rounded-lg text-slate-700 font-medium transition">My Picks</button>
+        <button id="btn-menu-board" onclick="navigate('leaderboard-view')" class="w-full text-left p-3 hover:bg-gray-100 rounded-lg text-slate-700 font-medium transition hidden">Leaderboard</button>
+        <button id="btn-menu-stats" onclick="navigate('stats-view')" class="w-full text-left p-3 hover:bg-gray-100 rounded-lg text-slate-700 font-medium transition hidden">Stats</button>
+        <button onclick="navigate('rules-view')" class="w-full text-left p-3 hover:bg-gray-100 rounded-lg text-slate-700 font-medium transition">League Details</button>
+        <button onclick="navigate('admin-view')" class="w-full text-left p-3 hover:bg-gray-100 rounded-lg text-slate-700 font-medium transition admin-only">Admin Panel</button>
+      </nav>
+      <div class="p-4 border-t bg-slate-50 space-y-2">
+        <button onclick="navigate('profile-view')" class="w-full text-left p-3 text-slate-700 font-semibold hover:bg-slate-100 rounded-lg transition border border-gray-200">My Profile</button>
+        <button onclick="logout()" class="w-full text-left p-3 text-red-600 font-semibold hover:bg-red-100 rounded-lg transition">Logout</button>
+      </div>
+    </div>
+  </div>
+  <main class="max-w-md mx-auto p-4 mt-2">
+    <div id="loading-view" class="flex flex-col items-center justify-center h-64 mt-20 fade-in">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900 mb-4"></div>
+      <p class="text-slate-500 text-sm font-medium">Loading WC26 Pool...</p>
+    </div>
+    <div id="login-view" class="hidden fade-in max-w-sm mx-auto mt-20">
+      <div class="text-center mb-8">
+        <img src="icon.png" alt="Logo" class="h-24 mx-auto mb-4 drop-shadow-sm">
+        <h1 class="text-2xl font-bold text-slate-800">WC26 Pool</h1>
+      </div>
+      <form onsubmit="handleLogin(event)" class="space-y-4 app-card p-6">
+        <p id="login-error" class="hidden text-red-500 text-sm text-center bg-red-50 p-2 rounded border border-red-100"></p>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input type="email" id="email" class="w-full border-gray-300 rounded-lg shadow-sm p-3 border focus:ring-slate-900 focus:border-slate-900 outline-none transition" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Invite Code</label>
+          <input type="text" id="code" class="w-full border-gray-300 rounded-lg shadow-sm p-3 border focus:ring-slate-900 uppercase outline-none transition" required>
+        </div>
+        <button type="submit" class="w-full bg-slate-900 text-white font-semibold py-3 rounded-full hover:bg-slate-800 transition shadow-md">Log In</button>
+        <div class="text-center mt-4">
+          <button type="button" onclick="forgotCode()" class="text-sm text-slate-500 hover:text-slate-800 underline transition">Forgot Invite Link?</button>
+        </div>
+      </form>
+    </div>
+    <div id="home-view" class="hidden fade-in space-y-4">
+      <div class="p-6 bg-slate-900 text-white rounded-2xl mb-6 shadow-md relative overflow-hidden">
+        <div class="relative z-10">
+          <h2 id="welcome-banner-title" class="text-xl font-semibold mb-1">Welcome back!</h2>
+          <p id="welcome-banner-subtitle" class="text-slate-300 text-sm">Ready for the tournament?</p>
+        </div>
+        <div class="absolute -right-4 -bottom-4 opacity-10 text-6xl">⚽</div>
+      </div>
+      <div class="flex flex-col gap-3">
+        <button id="btn-home-choose" onclick="navigate('choose-view')" class="app-card p-4 flex flex-row items-center justify-center hover:bg-slate-50 transition active:scale-95 shadow-sm w-full">
+          <span class="text-3xl mr-3">🌍</span><span class="font-medium text-lg text-slate-700">Choose Teams</span>
+        </button>
+        <button onclick="navigate('picks-view')" class="app-card p-4 flex flex-row items-center justify-center hover:bg-slate-50 transition active:scale-95 shadow-sm w-full">
+          <span class="text-3xl mr-3">📋</span><span class="font-medium text-lg text-slate-700">My Picks</span>
+        </button>
+        <button id="btn-home-board" onclick="navigate('leaderboard-view')" class="app-card p-4 flex flex-row items-center justify-center hover:bg-slate-50 transition active:scale-95 shadow-sm w-full hidden">
+          <span class="text-3xl mr-3">🏆</span><span class="font-medium text-lg text-slate-700">Leaderboard</span>
+        </button>
+        <button id="btn-home-stats" onclick="navigate('stats-view')" class="app-card p-4 flex flex-row items-center justify-center hover:bg-slate-50 transition active:scale-95 shadow-sm w-full hidden">
+          <span class="text-3xl mr-3">📊</span><span class="font-medium text-lg text-slate-700">Stats</span>
+        </button>
+        <button onclick="navigate('rules-view')" class="app-card p-4 flex flex-row items-center justify-center hover:bg-slate-50 transition active:scale-95 shadow-sm w-full">
+          <span class="text-3xl mr-3">📖</span><span class="font-medium text-lg text-slate-700">League Details</span>
+        </button>
+        <button onclick="navigate('admin-view')" class="app-card p-4 flex flex-row items-center justify-center hover:bg-slate-50 transition active:scale-95 shadow-sm w-full admin-only">
+          <span class="text-3xl mr-3">⚙️</span><span class="font-medium text-lg text-slate-700">Admin Panel</span>
+        </button>
+      </div>
+    </div>
+    <div id="choose-view" class="hidden fade-in">
+      <div class="p-4 bg-yellow-50 text-yellow-800 rounded-lg text-sm mb-5 border border-yellow-200 flex items-start shadow-sm">
+        <span class="text-lg mr-2">🔒</span>
+        <div><span class="font-semibold block mb-1">Rosters Lock Soon</span> Teams lock on June 11th, 2026 at 2:00 PM CST.</div>
+      </div>
+      <h2 class="text-2xl font-bold mb-4 text-slate-800 px-1">Choose Teams</h2>
+      <div id="choose-teams-container"></div>
+      <button id="btn-save-picks" onclick="submitPicks()" class="w-full bg-slate-900 text-white font-semibold py-3 rounded-full hover:bg-slate-800 transition mt-6 shadow-md">Save Picks</button>
+    </div>
+    <div id="admin-view" class="hidden fade-in">
+      <h2 class="text-2xl font-bold mb-6 text-slate-800 px-1">Admin Panel</h2>
+      <div id="admin-container"></div>
+    </div>
+    <div id="profile-view" class="hidden fade-in">
+      <h2 class="text-2xl font-bold mb-4 px-1 text-slate-800">My Profile</h2>
+      <div class="app-card p-6" id="profile-container"></div>
+    </div>
+    <div id="rules-view" class="hidden fade-in">
+      <h2 class="text-2xl font-bold mb-4 px-1 text-slate-800">League Details</h2>
+      <div id="rules-content"></div>
+      <div class="app-card p-6 mt-4">
+        <h3 class="font-bold text-lg mb-2">App Installation</h3>
+        <p class="text-sm text-gray-600 mb-3"><b>iPhone:</b> Open in Safari, tap the Share icon at the bottom, and select "Add to Home Screen".</p>
+        <p class="text-sm text-gray-600"><b>Android:</b> Open in Chrome, tap the 3 dots menu top right, and select "Install app" or "Add to Home Screen".</p>
+      </div>
+    </div>
+    <div id="picks-view" class="hidden fade-in pb-8"></div>
+    <div id="leaderboard-view" class="hidden fade-in pb-8"></div>
+    <div id="stats-view" class="hidden fade-in pb-8"></div>
+  </main>
+  <nav id="bottom-nav" class="hidden fixed bottom-0 w-full bg-white border-t border-gray-200 px-6 py-3 flex justify-between text-xs font-medium text-gray-500 z-40 pb-safe shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
+    <button onclick="navigate('home-view')" class="flex flex-col items-center hover:text-slate-900 transition"><span class="text-xl mb-1">🏠</span>Home</button>
+    <button onclick="navigate('picks-view')" class="flex flex-col items-center hover:text-slate-900 transition"><span class="text-xl mb-1">📋</span>Picks</button>
+    <button id="btn-nav-board" onclick="navigate('leaderboard-view')" class="flex flex-col items-center hover:text-slate-900 transition hidden"><span class="text-xl mb-1">🏆</span>Board</button>
+    <button id="btn-nav-stats" onclick="navigate('stats-view')" class="flex flex-col items-center hover:text-slate-900 transition hidden"><span class="text-xl mb-1">📊</span>Stats</button>
+  </nav>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js');
+      });
+    }
+  </script>
+  <style>
+    @supports (padding-bottom: env(safe-area-inset-bottom)) {
+      .pb-safe { padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
+    }
+  </style>
+</body>
+</html>

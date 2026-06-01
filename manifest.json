@@ -1,0 +1,21 @@
+{
+  "name": "World Cup 2026 Pool",
+  "short_name": "WC26 Pool",
+  "description": "Progressive Web App for tracking the World Cup 2026 Pool.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
