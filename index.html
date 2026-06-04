@@ -33,6 +33,7 @@
     let isLoggingIn = false;
     let statsSortMode = 'Tier';
     let statsBracketRound = 'R32';
+    let leaderboardViewMode = 'Team';
 
     // --- Browser Navigation & Pull-to-Refresh ---
     window.onpopstate = function(event) {
@@ -275,7 +276,7 @@
       }
 
       let html = '';
-      for(let i=1; i<=12; i++) { // Render 12 Tiers
+      for(let i=1; i<=12; i++) {
         const hasPick = !!userPicks[i];
         const tierClass = hasPick ? 'tier-green' : 'bg-white';
         const titleColor = hasPick ? 'text-green-800' : 'text-slate-800';
@@ -557,6 +558,11 @@
     }
 
     // --- Leaderboard Logic ---
+    function changeLeaderboardMode(mode) {
+      leaderboardViewMode = mode;
+      renderLeaderboard();
+    }
+
     function renderLeaderboard() {
       if (!state.data || !state.data.users) return;
       
@@ -573,44 +579,95 @@
       
       const sortedUsers = [...state.data.users].sort((a,b) => (b.points || 0) - (a.points || 0));
       
-      let html = `<h2 class="text-2xl font-bold mb-6 text-slate-800 px-1">Leaderboard</h2><div class="space-y-3">`;
-      
-      sortedUsers.forEach((u, index) => {
-        const rank = index + 1;
-        const userPicksData = u.picks || {};
-        
-        html += `
-          <div class="app-card overflow-hidden">
-            <div class="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition" onclick="toggleLeaderboardUser(${rank})">
-              <div class="flex items-center flex-1">
-                <span class="text-lg font-bold text-slate-400 w-8">#${rank}</span>
-                <span class="font-bold text-slate-800">${u.name || 'Unknown'}</span>
+      let html = `
+        <h2 class="text-2xl font-bold mb-4 px-1 text-slate-800">Leaderboard</h2>
+        <div class="flex bg-gray-200 p-1 rounded-lg mb-6 shadow-inner">
+          <button onclick="changeLeaderboardMode('Team')" class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition ${leaderboardViewMode === 'Team' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}">Team</button>
+          <button onclick="changeLeaderboardMode('Country')" class="flex-1 py-1.5 text-[11px] font-bold rounded-md transition ${leaderboardViewMode === 'Country' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}">Country</button>
+        </div>
+      `;
+
+      if (leaderboardViewMode === 'Team') {
+        html += `<div class="space-y-3">`;
+        sortedUsers.forEach((u, index) => {
+          const rank = index + 1;
+          const userPicksData = u.picks || {};
+          
+          html += `
+            <div class="app-card overflow-hidden">
+              <div class="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition" onclick="toggleLeaderboardUser(${rank})">
+                <div class="flex items-center flex-1">
+                  <span class="text-lg font-bold text-slate-400 w-8">#${rank}</span>
+                  <span class="font-bold text-slate-800">${u.name || 'Unknown'}</span>
+                </div>
+                <span class="text-xl font-bold text-indigo-600">${u.points || 0}</span>
               </div>
-              <span class="text-xl font-bold text-indigo-600">${u.points || 0}</span>
+              <div id="lb-user-${rank}" class="hidden bg-gray-50 border-t border-gray-100 p-4">
+                <table class="w-full text-xs text-left">
+                  <thead class="text-gray-400 uppercase text-[10px]"><tr><th class="pb-2">Tier</th><th class="pb-2">Team</th><th class="pb-2 text-right">Pts</th></tr></thead>
+                  <tbody>
+                    ${[...Array(12)].map((_, i) => {
+                      const tier = i + 1;
+                      const teamName = userPicksData[tier] || '-';
+                      const t = state.data.teams.find(tm => tm.name === teamName) || { points: 0, eliminated: false };
+                      
+                      let tierLabel = `T${tier}`;
+                      if (tier >= 8 && tier <= 11) tierLabel += ` <span class="text-indigo-500 font-bold text-[9px]">(2x)</span>`;
+                      else if (tier === 12) tierLabel += ` <span class="text-purple-500 font-bold text-[9px]">(3x)</span>`;
+                      
+                      const elimIcon = t.eliminated ? '<span class="text-[10px] ml-1 flex-shrink-0">❌</span>' : '';
+                      return `<tr><td class="py-1 text-slate-400 font-medium whitespace-nowrap">${tierLabel}</td><td class="py-1 font-semibold text-slate-700 w-full px-2 flex items-center"><span class="truncate">${teamName}</span>${elimIcon}</td><td class="py-1 text-right">${t.points || 0}</td></tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div id="lb-user-${rank}" class="hidden bg-gray-50 border-t border-gray-100 p-4">
-              <table class="w-full text-xs text-left">
-                <thead class="text-gray-400 uppercase text-[10px]"><tr><th class="pb-2">Tier</th><th class="pb-2">Team</th><th class="pb-2 text-right">Pts</th></tr></thead>
-                <tbody>
-                  ${[...Array(12)].map((_, i) => {
-                    const tier = i + 1;
-                    const teamName = userPicksData[tier] || '-';
-                    const t = state.data.teams.find(tm => tm.name === teamName) || { points: 0, eliminated: false };
-                    
-                    let tierLabel = `T${tier}`;
-                    if (tier >= 8 && tier <= 11) tierLabel += ` <span class="text-indigo-500 font-bold text-[9px]">(2x)</span>`;
-                    else if (tier === 12) tierLabel += ` <span class="text-purple-500 font-bold text-[9px]">(3x)</span>`;
-                    
-                    const elimIcon = t.eliminated ? '<span class="text-[10px] ml-1 flex-shrink-0">❌</span>' : '';
-                    return `<tr><td class="py-1 text-slate-400 font-medium whitespace-nowrap">${tierLabel}</td><td class="py-1 font-semibold text-slate-700 w-full px-2 flex items-center"><span class="truncate">${teamName}</span>${elimIcon}</td><td class="py-1 text-right">${t.points || 0}</td></tr>`;
-                  }).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          `;
+        });
+        html += `</div>`;
+      } else {
+        html += `
+          <div class="app-card overflow-x-auto shadow-sm border border-gray-200 rounded-lg pb-1">
+            <table class="w-full text-left border-collapse text-[10px] sm:text-xs">
+              <thead class="bg-slate-100 text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th class="py-2 px-2 sticky left-0 z-20 bg-slate-100 border-b border-r border-gray-200 w-[110px] min-w-[110px] max-w-[110px]">Name</th>
+                  <th class="py-2 px-1 sticky left-[110px] z-20 bg-slate-200 border-b border-r border-gray-300 text-center w-[40px] min-w-[40px] max-w-[40px]">Pts</th>
+                  ${[...Array(12)].map((_, i) => `<th class="py-2 px-2 border-b border-slate-200 text-center min-w-[90px]">T${i+1}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100 bg-white">
         `;
-      });
-      html += `</div>`;
+
+        sortedUsers.forEach(u => {
+          const userPicksData = u.picks || {};
+          html += `
+            <tr class="hover:bg-gray-50 transition">
+              <td class="py-2 px-2 sticky left-0 z-10 bg-white border-r border-gray-100 font-semibold text-slate-800 truncate w-[110px] min-w-[110px] max-w-[110px] shadow-[1px_0_0_#f1f5f9]">${u.name || 'Unknown'}</td>
+              <td class="py-2 px-1 sticky left-[110px] z-10 bg-slate-50 border-r border-gray-200 font-bold text-indigo-700 text-center w-[40px] min-w-[40px] max-w-[40px] shadow-[1px_0_0_#e2e8f0]">${u.points || 0}</td>
+          `;
+
+          for(let i=1; i<=12; i++) {
+            const teamName = userPicksData[i] || '-';
+            const t = state.data.teams.find(tm => tm.name === teamName) || { flag: '', eliminated: false };
+            const elimIcon = t.eliminated ? '<span class="text-[8px] ml-1">❌</span>' : '';
+            const flagHtml = t.flag ? `<img src="${t.flag}" class="w-4 h-3 mr-1.5 object-cover border border-gray-200 rounded-sm flex-shrink-0">` : (teamName !== '-' ? `<div class="w-4 h-3 mr-1.5 bg-gray-200 rounded-sm flex-shrink-0"></div>` : '');
+
+            html += `
+              <td class="py-1.5 px-2 border-r border-gray-50 whitespace-nowrap">
+                <div class="flex items-center justify-center w-full">
+                  ${flagHtml}
+                  <span class="truncate font-medium text-slate-700">${teamName !== '-' ? teamName : ''}</span>
+                  ${elimIcon}
+                </div>
+              </td>
+            `;
+          }
+          html += `</tr>`;
+        });
+        html += `</tbody></table></div>`;
+      }
+
       document.getElementById('leaderboard-view').innerHTML = html;
     }
 
@@ -736,11 +793,9 @@
                 const awayElimIcon = awayTeam.eliminated ? '<span class="text-[10px] ml-1.5 flex-shrink-0">❌</span>' : '';
                 const homeWinIcon = homeWinner ? '<span class="text-[12px] ml-1.5 flex-shrink-0 text-green-500">➡️</span>' : '';
                 const awayWinIcon = awayWinner ? '<span class="text-[12px] ml-1.5 flex-shrink-0 text-green-500">➡️</span>' : '';
-                
                 let homeMultIcon = '';
                 if(homeIs3x) homeMultIcon = '<span class="text-[9px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full ml-1.5 flex-shrink-0">3X</span>';
                 else if(homeIs2x) homeMultIcon = '<span class="text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-full ml-1.5 flex-shrink-0">2X</span>';
-
                 let awayMultIcon = '';
                 if(awayIs3x) awayMultIcon = '<span class="text-[9px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full ml-1.5 flex-shrink-0">3X</span>';
                 else if(awayIs2x) awayMultIcon = '<span class="text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-full ml-1.5 flex-shrink-0">2X</span>';
