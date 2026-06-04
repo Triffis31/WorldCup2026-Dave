@@ -204,7 +204,6 @@
       const isAdmin = state.role === 'Admin';
       const user = state.data.currentUser;
       
-      // Update Dynamic Banner
       if (user && user.name) {
         const firstName = user.name.split(' ')[0];
         document.getElementById('welcome-banner-title').innerText = `Welcome back, ${firstName}!`;
@@ -218,17 +217,14 @@
       const showChoose = !isLocked;
       const showBoardStats = isLocked || isAdmin;
 
-      // Toggle Home Buttons
       document.getElementById('btn-home-choose').classList.toggle('hidden', !showChoose);
       document.getElementById('btn-home-board').classList.toggle('hidden', !showBoardStats);
       document.getElementById('btn-home-stats').classList.toggle('hidden', !showBoardStats);
 
-      // Toggle Mobile Menu Buttons
       document.getElementById('btn-menu-choose').classList.toggle('hidden', !showChoose);
       document.getElementById('btn-menu-board').classList.toggle('hidden', !showBoardStats);
       document.getElementById('btn-menu-stats').classList.toggle('hidden', !showBoardStats);
 
-      // Toggle Bottom Nav Icons
       document.getElementById('btn-nav-board').classList.toggle('hidden', !showBoardStats);
       document.getElementById('btn-nav-stats').classList.toggle('hidden', !showBoardStats);
     }
@@ -906,7 +902,7 @@
               </div>
               <select onchange="handleAdminAction(this, '${u.email}', '${u.role}', ${u.paid})" class="text-sm border border-gray-300 rounded-lg p-2 bg-white focus:ring-slate-900 focus:border-slate-900 outline-none">
                 <option value="">Actions...</option>
-                <option value="resend">Resend Invite Code</option>
+                <option value="resend">Resend invite Code</option>
                 <option value="paid">${paidToggleText}</option>
                 <option value="promote">${roleToggleText}</option>
                 ${u.role !== 'Admin' ? `<option value="remove" class="text-red-600 font-medium">Remove User</option>` : ''}
