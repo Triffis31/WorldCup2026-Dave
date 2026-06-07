@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wc26-pool-v37-FINAL';
+const CACHE_NAME = 'wc26-pool-v38-FINAL';
 const ASSETS = [
   './',
   './index.html',

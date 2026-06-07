@@ -650,7 +650,7 @@
           for(let i=1; i<=12; i++) {
             const teamName = userPicksData[i] || '-';
             const t = state.data.teams.find(tm => tm.name === teamName) || { flag: '', eliminated: false };
-            const elimIcon = t.eliminated ? '<span class="text-[8px] ml-1">❌</span>' : '';
+            const elimIcon = t.eliminated ? '<span class="text-[8px] ml-1 flex-shrink-0">❌</span>' : '';
             const flagHtml = t.flag ? `<img src="${t.flag}" class="w-4 h-3 mr-1.5 object-cover border border-gray-200 rounded-sm flex-shrink-0">` : (teamName !== '-' ? `<div class="w-4 h-3 mr-1.5 bg-gray-200 rounded-sm flex-shrink-0"></div>` : '');
 
             html += `
@@ -711,6 +711,7 @@
       `;
 
       if (statsSortMode === 'Bracket') {
+        // --- Bracket View Logic ---
         html += `
           <div class="flex w-full bg-slate-100 p-1 rounded-lg mb-6 shadow-sm border border-gray-200 justify-between">
             <button onclick="changeBracketRound('R32')" class="flex-1 py-1.5 rounded-md text-[10px] sm:text-[11px] font-bold transition ${statsBracketRound === 'R32' ? 'bg-slate-800 text-white shadow-sm' : 'text-gray-500 hover:text-slate-700'}">R32</button>
@@ -1076,6 +1077,13 @@
       }
     }
 
+    function toggleRulesSection(sectionId) {
+      const content = document.getElementById(`rules-${sectionId}`);
+      const chevron = document.getElementById(`rules-chevron-${sectionId}`);
+      content.classList.toggle('hidden');
+      chevron.classList.toggle('rotate-180');
+    }
+
     function renderRules() {
       let payoutsHtml = `
         <table class="w-full text-sm text-left border-collapse">
@@ -1105,32 +1113,116 @@
       payoutsHtml += `</tbody></table>`;
 
       const html = `
-        <div class="app-card p-6 mb-4">
-          <h3 class="font-bold text-lg mb-3 border-b border-slate-100 pb-2 text-slate-800">Payouts</h3>
-          ${payoutsHtml}
-        </div>
-        <div class="app-card p-6 mb-4">
-          <h3 class="font-bold text-lg mb-2 text-slate-800 border-b border-slate-100 pb-2">Scoring Rules</h3>
-          <ul class="text-sm text-slate-600 space-y-2.5 mt-4">
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Goal</span><span class="font-bold text-slate-800">1 pt</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Shutout</span><span class="font-bold text-slate-800">1 pt</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Group Tie</span><span class="font-bold text-slate-800">1 pt</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Group - 1st</span><span class="font-bold text-slate-800">8 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Group - 2nd</span><span class="font-bold text-slate-800">4 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Group - 3rd (advance)</span><span class="font-bold text-slate-800">2 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Win Group Game 1</span><span class="font-bold text-slate-800">3 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Win Group Game 2</span><span class="font-bold text-slate-800">3 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Win Group Game 3</span><span class="font-bold text-slate-800">3 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Win Round of 32</span><span class="font-bold text-slate-800">12 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Win Round of 16</span><span class="font-bold text-slate-800">18 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Win Quarterfinal</span><span class="font-bold text-slate-800">24 pts</span></li>
-            <li class="flex justify-between items-center border-b border-dashed border-slate-100 pb-1"><span>Win Semifinal</span><span class="font-bold text-slate-800">30 pts</span></li>
-            <li class="flex justify-between items-center pb-1"><span>Win Final</span><span class="font-bold text-slate-800">40 pts</span></li>
+        <!-- How It Works Section -->
+        <div class="app-card mb-4 overflow-hidden">
+          <div class="p-4 flex justify-between items-center cursor-pointer font-bold text-lg text-slate-800 border-b border-transparent hover:bg-gray-50 transition" onclick="toggleRulesSection('how')">
+            <span>How the Pool Works</span>
+            <span id="rules-chevron-how" class="transform transition-transform duration-200 text-slate-400 text-sm">▼</span>
+          </div>
+          <div id="rules-how" class="p-5 bg-slate-50 border-t border-gray-100 text-sm text-slate-700 space-y-4">
+            <p>Whether you are a die-hard Futbol fan or a casual follower, this pool is a great way to make the World Cup even more fun to follow. It's not difficult, and the more the merrier.</p>
+            <p>For returning participants, it's good to have you back. For those who are new to this, buckle up! Either way, the new tournament format has created some interesting new variables to the pool. Can't wait to see how it all shakes out!</p>
             
-            <li class="mt-4 text-red-600 font-bold bg-red-50 border border-red-100 p-3 rounded-lg text-center leading-relaxed">
-              Tier 11 = Double Pts.<br>Tier 12 = Triple Pts.
-            </li>
-          </ul>
+            <p class="font-bold text-slate-900 mt-6 mb-2">How it Works:</p>
+            <p>You will select ONE TEAM from each of the following tiers (via Vegas odds):</p>
+            <ul class="list-disc pl-5 space-y-1 mb-4">
+              <li>Tier 1: France / Spain / England</li>
+              <li>Tier 2: Brazil / Argentina / Portugal</li>
+              <li>Tier 3: Germany / Netherlands / Belgium</li>
+              <li>Tier 4: Colombia / Uruguay / USA</li>
+              <li>Tier 5: Norway / Morocco / Switzerland / Japan</li>
+              <li>Tier 6: Mexico / Croatia / Ecuador / Senegal</li>
+              <li>Tier 7: Sweden / Turkiye / Austria / Canada</li>
+              <li>Tier 8: Scotland / Ivory Coast / Czechia / Paraguay</li>
+              <li>Tier 9: Egypt / Ghana / Algeria / South Korea</li>
+              <li>Tier 10: Tunisia / Bosnia & Herzegovina / Australia / Iran</li>
+              <li>Tier 11 (2x Points): Panama / South Africa / Saudi Arabia / Cape Verde / DR Congo / Uzbekistan</li>
+              <li>Tier 12 (3x Points): New Zealand / Qatar / Iraq / Jordan / Haiti / Curacao</li>
+            </ul>
+
+            <p class="font-bold text-slate-900 mt-6 mb-2">Making Your Picks:</p>
+            <ul class="list-disc pl-5 space-y-2">
+              <li>Select your team for each tier in the Choose Teams tab. Make sure you hit Save Picks at the bottom of the page.</li>
+              <li>You will be able to make changes to your picks up until kickoff of the first game (no more messaging me to make your changes!) and it will automatically pull scores and results in real time from ESPN and everything.</li>
+              <li>Select your picks by Game 1 (Noon PST on Thursday, June 11)</li>
+            </ul>
+
+            <p class="font-bold text-slate-900 mt-6">Scoring for how those teams perform is detailed out in the section below.</p>
+            
+            <p class="italic text-slate-500 mt-4">It's bittersweet because I will miss my beautiful hand-made spreadsheet scoreboard, but the app is going to make selecting your teams and scoring SO much easier.</p>
+            
+            <div class="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg font-semibold text-blue-900 text-center">
+              $25 buy-in: Venmo @David-Marowitz or PayPal.
+            </div>
+
+            <p class="mt-4">If you want to invite someone to the pool, send me their email address.</p>
+            <p>Looking forward to a great summer of World Cup Futbol! Feel free to reach out with any questions, and best of luck to you all!</p>
+          </div>
+        </div>
+
+        <!-- Payouts Section -->
+        <div class="app-card mb-4 overflow-hidden">
+          <div class="p-4 flex justify-between items-center cursor-pointer font-bold text-lg text-slate-800 border-b border-transparent hover:bg-gray-50 transition" onclick="toggleRulesSection('payouts')">
+            <span>Payouts</span>
+            <span id="rules-chevron-payouts" class="transform transition-transform duration-200 text-slate-400 text-sm">▼</span>
+          </div>
+          <div id="rules-payouts" class="p-5 bg-slate-50 border-t border-gray-100">
+            <p class="text-sm text-slate-600 mb-4">It will depend on how many entries we get. We had about 100 entries in 2024 and 1st place took over $1,000. It will be something like:</p>
+            <ul class="list-disc pl-5 space-y-1 text-sm text-slate-700 mb-6">
+              <li>1st Place: ~55%</li>
+              <li>2nd Place: ~23%</li>
+              <li>3rd Place: ~12%</li>
+              <li>4th Place: Small Prize</li>
+              <li>Group Stage Winner: Small Prize</li>
+              <li>Last place gets their entry fee back</li>
+            </ul>
+            <p class="text-xs text-slate-500 italic mb-6">A very small portion of your buy-in (about 1%) goes toward the costs and time of building and developing the new website. Thank you.</p>
+            
+            ${payoutsHtml}
+          </div>
+        </div>
+
+        <!-- Scoring Rules Section -->
+        <div class="app-card mb-4 overflow-hidden">
+          <div class="p-4 flex justify-between items-center cursor-pointer font-bold text-lg text-slate-800 border-b border-transparent hover:bg-gray-50 transition" onclick="toggleRulesSection('scoring')">
+            <span>Scoring Rules</span>
+            <span id="rules-chevron-scoring" class="transform transition-transform duration-200 text-slate-400 text-sm">▼</span>
+          </div>
+          <div id="rules-scoring" class="p-5 bg-slate-50 border-t border-gray-100">
+            <ul class="text-sm text-slate-700 space-y-2.5">
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Goal</span><span class="font-bold text-slate-800">1 pt</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Shutout</span><span class="font-bold text-slate-800">1 pt</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Group Tie</span><span class="font-bold text-slate-800">1 pt</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Group - 1st</span><span class="font-bold text-slate-800">8 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Group - 2nd</span><span class="font-bold text-slate-800">4 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Group - 3rd (advance)</span><span class="font-bold text-slate-800">2 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Win Group Game 1</span><span class="font-bold text-slate-800">3 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Win Group Game 2</span><span class="font-bold text-slate-800">3 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Win Group Game 3</span><span class="font-bold text-slate-800">3 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Win Round of 32</span><span class="font-bold text-slate-800">12 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Win Round of 16</span><span class="font-bold text-slate-800">18 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Win Quarterfinal</span><span class="font-bold text-slate-800">24 pts</span></li>
+              <li class="flex justify-between items-center border-b border-dashed border-slate-200 pb-1"><span>Win Semifinal</span><span class="font-bold text-slate-800">30 pts</span></li>
+              <li class="flex justify-between items-center pb-1"><span>Win Final</span><span class="font-bold text-slate-800">40 pts</span></li>
+              
+              <li class="mt-4 text-indigo-800 font-bold bg-indigo-50 border border-indigo-100 p-3 rounded-lg text-center leading-relaxed">
+                Tier 11 = Double Pts.<br>Tier 12 = Triple Pts.
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- App Installation Section -->
+        <div class="app-card mb-4 overflow-hidden">
+          <div class="p-4 flex justify-between items-center cursor-pointer font-bold text-lg text-slate-800 border-b border-transparent hover:bg-gray-50 transition" onclick="toggleRulesSection('install')">
+            <span>App Installation</span>
+            <span id="rules-chevron-install" class="transform transition-transform duration-200 text-slate-400 text-sm">▼</span>
+          </div>
+          <div id="rules-install" class="p-5 bg-slate-50 border-t border-gray-100">
+            <p class="text-sm text-slate-600 mb-4">You can install this pool directly to your phone's home screen for easy access!</p>
+            <p class="text-sm text-slate-700 mb-3"><b>iPhone:</b> Open this page in Safari, tap the Share icon at the bottom of the screen, scroll down, and select "Add to Home Screen".</p>
+            <p class="text-sm text-slate-700"><b>Android:</b> Open this page in Chrome, tap the 3 dots menu in the top right corner, and select "Install app" or "Add to Home Screen".</p>
+          </div>
         </div>
       `;
       document.getElementById('rules-content').innerHTML = html;
@@ -1243,11 +1335,6 @@
     <div id="rules-view" class="hidden fade-in pb-12">
       <h2 class="text-2xl font-bold mb-4 px-1 text-slate-800">League Details</h2>
       <div id="rules-content"></div>
-      <div class="app-card p-6 mt-4">
-        <h3 class="font-bold text-lg mb-2">App Installation</h3>
-        <p class="text-sm text-gray-600 mb-3"><b>iPhone:</b> Open in Safari, tap the Share icon at the bottom, and select "Add to Home Screen".</p>
-        <p class="text-sm text-gray-600"><b>Android:</b> Open in Chrome, tap the 3 dots menu top right, and select "Install app" or "Add to Home Screen".</p>
-      </div>
     </div>
     <div id="picks-view" class="hidden fade-in pb-8"></div>
     <div id="leaderboard-view" class="hidden fade-in pb-8"></div>
